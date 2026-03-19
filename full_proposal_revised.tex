@@ -1,0 +1,390 @@
+\documentclass[10pt]{article}
+
+\usepackage[margin=0.78in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{times}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.30em}
+\titleformat{\section}{\normalsize\bfseries}{\thesection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{0.48em}{0.20em}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection.}{0.45em}{}
+\titlespacing*{\subsection}{0pt}{0.38em}{0.16em}
+
+\begin{document}
+\small
+
+\begin{center}
+    {\Large \textbf{When Is Extra Reasoning Worth the Cost?}}\\
+    \vspace{0.12em}
+    {\normalsize Adaptive Reasoning with Cost-Aware Search for Qwen3-4B-Instruct-2507}
+\end{center}
+
+\section*{Abstract}
+Inference-time reasoning strategies such as Chain-of-Thought (CoT), self-consistency, and Tree-of-Thought (ToT) can improve performance on multi-step tasks, but they also increase token usage, latency, and compute cost. This project studies whether expensive reasoning is always worth using for a small open-source language model under limited compute budgets. Using Qwen3-4B-Instruct-2507, I will compare direct answering, zero-shot CoT, self-consistency, and a proposed budget-aware framework that combines adaptive reasoning routing with cost-aware search. The key idea is to treat reasoning as a limited resource: easy examples should be solved cheaply, while difficult examples should receive additional computation only when the expected gain justifies the cost. Methodologically, the project contributes a reproducible selective-inference policy rather than a fully learned search algorithm. Empirically, it evaluates both answer quality and accuracy-cost tradeoffs on arithmetic, logical, and knowledge-oriented benchmarks.
+
+\section{Introduction and Motivation}
+Recent work on language model reasoning has shown that inference-time strategies can substantially improve multi-step problem solving. However, stronger reasoning usually requires more generated tokens, more latency, and more repeated sampling or branching. In practice, not every input deserves the same amount of inference-time computation. Some questions can be answered correctly with a short direct response, while others require deliberate reasoning or search.
+
+This project studies the following question: \textbf{when is extra reasoning actually worth the cost?} Rather than assuming that all examples should receive a fixed amount of reasoning, I propose a budget-aware framework that allocates computation adaptively. The intuition is simple: if a question appears easy, the model should answer directly; if it appears difficult, the system may escalate to step-by-step reasoning; if uncertainty remains high, the system should explore a small number of candidate reasoning paths while explicitly penalizing excessive cost.
+
+This question matters for both scientific and practical reasons. Scientifically, it helps clarify whether reasoning methods improve performance uniformly or only for certain task types. Practically, it matters because many student projects and real-world deployments operate under limited budgets such as paid Google Colab, API quotas, or latency constraints. The aim is therefore not to claim that one method universally dominates, but to identify \emph{when} additional reasoning pays off and when it becomes wasteful.
+
+\section{Goal, Claim, and Hypotheses}
+\subsection{Goal}
+The goal of this project is to design and evaluate a \textbf{budget-aware inference framework} for a small instruction-tuned language model. The framework should answer two questions:
+\begin{enumerate}[leftmargin=1.3em,itemsep=0.10em]
+    \item When should the model spend more computation on reasoning?
+    \item Once deeper reasoning becomes necessary, which reasoning paths are worth exploring further?
+\end{enumerate}
+
+\subsection{Central Claim}
+The central claim of this project is that \textbf{extra reasoning is not uniformly beneficial across tasks, and a budget-aware selective-inference method that combines adaptive routing with cost-aware search can achieve a better accuracy-cost tradeoff than fixed reasoning policies}. The main contribution is therefore empirical and methodological: a clearly specified selective reasoning policy and a fair analysis of its tradeoffs under limited compute.
+
+\subsection{Hypotheses}
+I will evaluate the following hypotheses:
+\begin{itemize}[leftmargin=1.2em,itemsep=0.10em]
+    \item \textbf{H1:} Under matched prompting and decoding controls, zero-shot CoT improves accuracy over direct answering on GSM8K and BBH, but the gain is smaller or less consistent on MMLU.
+    \item \textbf{H2:} Self-consistency improves accuracy over single-trace CoT on some tasks, but its additional gain diminishes relative to its added token and latency cost.
+    \item \textbf{H3:} The full adaptive-plus-search method yields a stronger accuracy-cost frontier than fixed policies at low-to-medium compute budgets, even if it does not always achieve the highest raw accuracy.
+    \item \textbf{H4:} The gain of the full method is attributable to both adaptive routing and cost-aware search; removing either component degrades the tradeoff.
+\end{itemize}
+
+\section{Problem Formulation}
+I formulate budgeted test-time reasoning as a constrained sequential decision problem. Let $x$ be an input question, let $y^\star$ be the ground-truth answer, and let $\pi$ denote an inference policy that decides how much reasoning to perform at test time. Rather than applying one fixed strategy to every example, the policy adaptively chooses whether to stop, deliberate, or expand a search frontier.
+
+At the policy level, the objective is to maximize expected answer quality under computation cost:
+\[
+\max_{\pi}\;
+\mathbb{E}_{x}\Big[
+\mathrm{Acc}(\hat y_\pi(x),y^\star)-\lambda C_\pi(x)
+\Big],
+\]
+where $\hat y_\pi(x)$ is the answer returned by policy $\pi$, $C_\pi(x)$ is the \textbf{total} inference cost, and $\lambda>0$ controls the quality-cost tradeoff. Total cost includes all generated tokens used for direct answers, consistency probes, search expansion, and any verifier calls. Equivalently, this can be viewed as the Lagrangian form of a constrained objective
+\[
+\max_{\pi}\;\mathbb{E}_{x}\big[\mathrm{Acc}(\hat y_\pi(x),y^\star)\big]
+\qquad
+\text{s.t.}\qquad
+\mathbb{E}_{x}[C_\pi(x)]\le B.
+\]
+
+At time step $t$, the system maintains a reasoning state
+\[
+s_t=(x,\tau_{\le t},b_t),
+\]
+where $\tau_{\le t}$ denotes the current reasoning trace and $b_t$ is a latent belief state summarizing how promising the current reasoning path is. The action space is
+\[
+\mathcal{A}=\{\text{stop},\text{deliberate},\text{branch}\}.
+\]
+
+The optimal value function can then be written in Bellman-style form:
+\[
+V(s_t)=
+\max\Bigl\{
+V_{\mathrm{stop}}(s_t),
+\max_{a\in\mathcal{A}_{\mathrm{cont}}}
+\bigl[
+-\lambda\,c(s_t,a)+\mathbb{E}[V(s_{t+1})\mid s_t,a]
+\bigr]
+\Bigr\},
+\]
+where $\mathcal{A}_{\mathrm{cont}}=\{\text{deliberate},\text{branch}\}$ and $c(s_t,a)$ is the incremental cost of action $a$ at state $s_t$. Intuitively, the system should continue reasoning only when the expected value of additional computation exceeds its marginal cost.
+
+\section{Proposed Method}
+\subsection{Overview}
+I propose a practical approximation to the above objective called \textbf{Adaptive Reasoning with Cost-Aware Search}. The method has two layers:
+\begin{enumerate}[leftmargin=1.3em,itemsep=0.12em]
+    \item \textbf{Adaptive Routing:} approximate policy-level mode selection by deciding whether to stop at direct answering, escalate to a short deliberate pass, or enter search.
+    \item \textbf{Cost-Aware Search:} for difficult cases, perform a small ToT-style search while pruning reasoning paths with low expected value relative to cost.
+\end{enumerate}
+
+This design keeps the method computationally feasible while preserving the decision-theoretic motivation of budgeted inference.
+
+\subsection{Adaptive Routing as Approximate Mode Selection}
+At a coarse level, the system chooses among a small set of reasoning modes
+\[
+\mathcal{R}=\{\text{direct},\text{CoT},\text{search}\}.
+\]
+The ideal routing decision is
+\[
+r^\star(x)=
+\arg\max_{r\in\mathcal{R}}
+\Bigl(
+\hat Q(x,r)-\lambda C(x,r)
+\Bigr),
+\]
+where $\hat Q(x,r)$ is the predicted answer quality under mode $r$ and $C(x,r)$ is its cost.
+
+In practice, I approximate this decision with a fixed stopping score. Given input $x$, the system first computes a direct answer
+\[
+\hat y^{(0)}=f_{\mathrm{direct}}(x).
+\]
+It then computes a lightweight score $S^{(0)}\in[0,1]$. If $S^{(0)}\ge \tau_0$, the system stops and returns $\hat y^{(0)}$. Otherwise it escalates to a short deliberate pass
+\[
+\hat y^{(1)}=f_{\mathrm{CoT}}(x),
+\]
+and computes $S^{(1)}$. If $S^{(1)}\ge \tau_1$, the system stops and returns $\hat y^{(1)}$; otherwise the example is routed to search. In all experiments, $\tau_0$ and $\tau_1$ are tuned once on a small development split and then frozen for the full evaluation.
+
+\subsection{Lightweight Correctness Posterior}
+Because the latent belief state $b_t$ is not directly observable, I approximate it with a lightweight correctness posterior built from fixed, reproducible signals:
+\[
+\hat p_{\mathrm{corr}}(s)
+=
+\frac{1}{3}\bigl(V(s)+A(s)+G(s)\bigr).
+\]
+Here each term lies in $[0,1]$:
+\begin{itemize}[leftmargin=1.2em,itemsep=0.08em]
+    \item $V(s)$ is a verifier-style consistency score. It is $1$ if the rationale and extracted final answer agree under rule-based checking, and $0$ otherwise.
+    \item $A(s)$ is an answer-agreement score from two short probe generations started from the same state; it is $1$ if the normalized final answers match and $0$ otherwise.
+    \item $G(s)$ is a format or constraint-satisfaction score. It is $1$ if the output is parseable into the required answer format and satisfies task-specific constraints, and $0$ otherwise.
+\end{itemize}
+The normalization rules are task-specific but fixed in advance: numerical answers are stripped to a canonical numeric form, while multiple-choice tasks are reduced to the final option label. This posterior acts as a proxy for the value of stopping:
+\[
+V_{\mathrm{stop}}(s)\approx \hat p_{\mathrm{corr}}(s).
+\]
+Using fixed binary components avoids post-hoc tuning of the uncertainty signal and keeps the method reproducible.
+
+\subsection{Cost-Aware Search}
+If uncertainty remains high after adaptive routing, the system enters a small ToT-style search over intermediate reasoning states. For each state $s$, I define the node utility
+\[
+U(s)=\hat p_{\mathrm{corr}}(s)-\lambda \widetilde C(s),
+\]
+where $\widetilde C(s)$ is the normalized cumulative inference cost up to state $s$:
+\[
+\widetilde C(s)=\frac{T(s)}{T_{\max}}+\eta\frac{d(s)}{d_{\max}}.
+\]
+Here $T(s)$ is cumulative generated tokens, $d(s)$ is search depth, $T_{\max}$ is the per-example token cap, and $d_{\max}$ is the maximum search depth. In the default configuration, $\eta=0.1$. The tradeoff coefficient $\lambda$ is selected on the development split from a small fixed grid $\{0,0.1,0.2,0.3\}$ and then frozen.
+
+This utility is not meant to be a fully learned value function. Instead, it is a tractable surrogate for the budgeted objective, combining a correctness proxy with explicit computation cost.
+
+\subsection{Value of Computation and Expand-or-Stop Decision}
+A key design question is whether a node is worth expanding further. I formalize this using a one-step value-of-computation criterion:
+\[
+\mathrm{VoC}(s_t,a)=
+\mathbb{E}\big[V(s_{t+1})\mid s_t,a\big]
+-
+V_{\mathrm{stop}}(s_t)
+-
+\lambda\,c(s_t,a).
+\]
+The system should continue reasoning only if some action has positive value of computation:
+\[
+a_t^\star=\arg\max_{a\in\mathcal{A}_{\mathrm{cont}}}\mathrm{VoC}(s_t,a),
+\qquad
+\text{continue iff }
+\max_{a\in\mathcal{A}_{\mathrm{cont}}}\mathrm{VoC}(s_t,a)>0.
+\]
+
+In practice, I approximate this criterion with a one-step frontier utility comparison. For a candidate state $s$,
+\[
+\Delta(s)=
+\max_{s'\in\mathrm{Child}(s)}U(s')-U(s).
+\]
+The node is expanded only if
+\[
+\Delta(s)>\tau_{\mathrm{expand}}.
+\]
+The threshold $\tau_{\mathrm{expand}}$ is tuned once on the development split and then frozen. This practical rule approximates the more general value-of-computation principle while remaining feasible to implement.
+
+\subsection{Search Update}
+At search depth $t$, let $\mathcal{S}_t$ be the frontier set. The next frontier is obtained by expanding candidate children and keeping only the top-$K$ states by utility:
+\[
+\mathcal{S}_{t+1}
+=
+\mathrm{TopK}_{s'\in\mathrm{Expand}(\mathcal{S}_t)}U(s').
+\]
+The final answer is taken from the terminal state with highest utility:
+\[
+\hat s_{\mathrm{final}}
+=
+\arg\max_{s\in\mathcal{S}_{\mathrm{term}}}U(s),
+\qquad
+\hat y=\mathrm{Ans}(\hat s_{\mathrm{final}}).
+\]
+To avoid ambiguity, the default search configuration is fixed to branching factor $b=2$, maximum depth $d_{\max}=2$, and beam size $K=2$ for all reported results unless an explicit budget-sweep is being plotted.
+
+\subsection{Interpretation}
+The proposed framework is \textbf{decision-theoretic} and \textbf{reward-inspired}, but it is not full reinforcement learning. There is no policy optimization or parameter update. Instead, the method uses a constrained-inference perspective: additional reasoning is treated as an optional computation whose value must justify its cost.
+
+\section{Workflow}
+The end-to-end workflow is:
+\begin{enumerate}[leftmargin=1.3em,itemsep=0.12em]
+    \item Input question $x$ enters the system.
+    \item Generate a direct answer and compute the stopping score $S^{(0)}$.
+    \item If $S^{(0)}\ge \tau_0$, return the direct answer.
+    \item Otherwise generate a short CoT answer and compute $S^{(1)}$.
+    \item If $S^{(1)}\ge \tau_1$, return the CoT answer.
+    \item Otherwise initialize a small search frontier.
+    \item For each frontier node, generate $b=2$ candidate next thoughts.
+    \item Compute $\hat p_{\mathrm{corr}}(s)$ and $U(s)$ for each node.
+    \item Expand only nodes whose estimated value of additional computation is positive.
+    \item Keep the top-$K$ nodes and continue until the depth limit is reached.
+    \item Return the answer from the terminal node with highest utility.
+\end{enumerate}
+
+\begin{algorithm}[t]
+\caption{Adaptive Reasoning with Cost-Aware Search}
+\small
+\begin{algorithmic}[1]
+\Require Input $x$, thresholds $\tau_0,\tau_1,\tau_{\mathrm{expand}}$, tradeoff $\lambda$
+\State $\hat{y}^{(0)} \gets f_{\mathrm{direct}}(x)$
+\State compute $S^{(0)}$ from fixed signals
+\If{$S^{(0)}\ge \tau_0$}
+    \State \Return $\hat{y}^{(0)}$
+\EndIf
+
+\State $\hat{y}^{(1)} \gets f_{\mathrm{CoT}}(x)$
+\State compute $S^{(1)}$ from fixed signals
+\If{$S^{(1)}\ge \tau_1$}
+    \State \Return $\hat{y}^{(1)}$
+\EndIf
+
+\State initialize frontier $\mathcal{S}_0$
+\For{$t=0$ to $d_{\max}-1$}
+    \State $\mathcal{C} \gets \mathrm{Expand}(\mathcal{S}_t)$
+    \ForAll{$s \in \mathcal{C}$}
+        \State compute $\hat p_{\mathrm{corr}}(s)$
+        \State compute normalized cost $\widetilde C(s)$
+        \State $U(s)\gets \hat p_{\mathrm{corr}}(s)-\lambda \widetilde C(s)$
+        \State prune $s$ if $\Delta(s)\le \tau_{\mathrm{expand}}$
+    \EndFor
+    \State $\mathcal{S}_{t+1}\gets \mathrm{TopK}_{s\in\mathcal{C}}U(s)$
+\EndFor
+\State \Return answer from $\arg\max_{s\in\mathcal{S}_{\mathrm{term}}}U(s)$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Baselines and Ablations}
+I will compare the proposed method against three fixed inference strategies:
+\begin{enumerate}[leftmargin=1.3em,itemsep=0.10em]
+    \item \textbf{Direct Answering:} answer without explicit reasoning.
+    \item \textbf{Zero-shot CoT:} reason step by step before answering.
+    \item \textbf{Self-Consistency:} generate multiple reasoning traces and select the final answer by agreement or majority vote. For feasibility, I will use $3$ samples.
+\end{enumerate}
+
+To isolate where gains come from, I will also run two ablations of the proposed method:
+\begin{itemize}[leftmargin=1.2em,itemsep=0.08em]
+    \item \textbf{Adaptive-only:} direct-to-CoT routing without search.
+    \item \textbf{Search-only:} always enter the same small search stage after CoT, without adaptive routing.
+\end{itemize}
+These ablations are necessary to test whether improvements come from selective routing, cost-aware search, or their combination.
+
+\section{Model, Data, and Infrastructure}
+\subsection{Model}
+The primary model will be \textbf{Qwen3-4B-Instruct-2507}. I chose this model because it is feasible for quantized inference in paid Google Colab while still being strong enough for meaningful reasoning comparisons. It is also an instruction-tuned model rather than a thinking-native model, making it a cleaner testbed for comparing external prompting and search strategies.
+
+\subsection{Datasets}
+To keep the project manageable, I will evaluate on fixed benchmark subsets rather than full datasets:
+\begin{itemize}[leftmargin=1.2em,itemsep=0.08em]
+    \item \textbf{Arithmetic reasoning:} GSM8K subset, 100 examples.
+    \item \textbf{Logical/symbolic reasoning:} BBH \textit{date\_understanding}, 50 examples.
+    \item \textbf{Logical/symbolic reasoning:} BBH \textit{logical\_deduction\_three\_objects}, 50 examples.
+    \item \textbf{Knowledge-oriented QA:} MMLU subset, 100 examples total from four subjects:
+    \begin{itemize}[leftmargin=1.2em,itemsep=0.04em]
+        \item high school mathematics,
+        \item formal logic,
+        \item computer security,
+        \item college biology,
+    \end{itemize}
+    with 25 questions per subject.
+\end{itemize}
+This yields roughly 300 evaluation examples. To reduce sampling ambiguity, I will construct the benchmark subsets with fixed random seeds and keep them frozen across all methods. A small, disjoint development split of about 30 examples will be used only for selecting $\tau_0$, $\tau_1$, $\tau_{\mathrm{expand}}$, and $\lambda$.
+
+\subsection{Infrastructure and Controlled Settings}
+Experiments will be run in paid Google Colab with Hugging Face Transformers using quantized inference. No model training is required; the project focuses entirely on inference-time reasoning. To keep the comparisons fair, all methods will use the same base model, the same answer parser, and the same task-specific output format. The only intended difference between methods is the inference policy itself.
+
+Unless otherwise stated, decoding controls are fixed as follows: greedy or low-temperature decoding for direct and single-trace CoT, temperature-based sampling only where diversity is required by self-consistency or search branching, and the same maximum answer length within a task family. These controls help ensure that performance differences are attributable to reasoning policy rather than prompt or decoding drift.
+
+\section{Evaluation}
+\subsection{Main Metrics}
+The main metrics will be:
+\begin{itemize}[leftmargin=1.2em,itemsep=0.08em]
+    \item \textbf{Accuracy}
+    \item \textbf{Average total token usage}
+    \item \textbf{Median latency}
+    \item \textbf{Accuracy-cost frontier}
+\end{itemize}
+
+The primary comparison will not rely only on a single ratio such as accuracy per token. Instead, I will report an accuracy-cost curve or frontier, where each method is represented by one or more operating points. For fixed policies, each strategy produces a point. For the proposed method, varying $\lambda$ over a small grid produces a small frontier. Accuracy per token will be reported only as a secondary summary.
+
+A useful dataset-level scalar summary of the tradeoff is
+\[
+J=
+\frac{1}{N}\sum_{i=1}^{N}
+\left[
+\mathrm{Acc}(\hat{y}_i,y_i^\star)-\mu\widetilde{C}_i
+\right],
+\]
+where $\widetilde{C}_i$ is normalized total cost and $\mu$ is a tradeoff parameter specified in advance.
+
+\subsection{Fair Comparison Protocol}
+To address fairness explicitly, I will evaluate methods in two ways:
+\begin{enumerate}[leftmargin=1.3em,itemsep=0.10em]
+    \item \textbf{Fixed-policy comparison:} compare the default settings of Direct, CoT, Self-Consistency-3, Adaptive-only, Search-only, and the full method.
+    \item \textbf{Matched-budget comparison:} compare methods at similar average total-token budgets whenever possible, so that conclusions are not driven only by one method spending much more computation.
+\end{enumerate}
+This protocol is intended to prevent the analysis from collapsing into the trivial claim that a cheaper method is more efficient simply because it does less work.
+
+\subsection{Additional Analysis}
+I will also analyze:
+\begin{itemize}[leftmargin=1.2em,itemsep=0.08em]
+    \item performance by task type,
+    \item the fraction of examples routed past direct answering,
+    \item the fraction of examples entering search,
+    \item the fraction of nodes pruned by the expand-or-stop rule,
+    \item ablation gaps between adaptive-only, search-only, and full,
+    \item qualitative failure cases.
+\end{itemize}
+To improve statistical robustness despite the small benchmark size, I will report bootstrap confidence intervals for the main accuracy numbers and keep the sampled evaluation set fixed across methods.
+
+\subsection{Runtime Measurement}
+Runtime on Colab can be noisy, so latency will be treated as a secondary metric. I will warm up the model before timing, measure inference in the same session, and report median per-example latency rather than a single raw run. Token cost will remain the primary compute measure because it is more stable across sessions.
+
+\section{Expected Outcomes}
+I expect the following results:
+\begin{enumerate}[leftmargin=1.3em,itemsep=0.10em]
+    \item Zero-shot CoT will help most on arithmetic and structured reasoning tasks.
+    \item Self-consistency will improve accuracy further, but at noticeably higher cost and with weaker cost-efficiency gains.
+    \item The proposed method will preserve much of the benefit of expensive reasoning while reducing unnecessary reasoning on easy cases.
+    \item The proposed method may not always achieve the highest raw accuracy, but it should perform strongly on the accuracy-cost frontier.
+\end{enumerate}
+
+A particularly important expected outcome is that the results will reveal a task-dependent pattern: extra reasoning is valuable in some settings but wasteful in others.
+
+\section{Risks and Mitigation}
+\textbf{Risk 1: The full method is too complex for the timeline.}  
+\textbf{Mitigation:} Start with the minimal version: fixed signals $V$, $A$, and $G$; shallow search with $b=2$, $d_{\max}=2$, $K=2$; and token-dominant cost only.
+
+\textbf{Risk 2: Gains are smaller than expected.}  
+\textbf{Mitigation:} Even in that case, the project still produces a principled analysis of reasoning-cost tradeoffs, matched-budget comparisons, and ablations across task types.
+
+\textbf{Risk 3: Colab runtime limits slow down experiments.}  
+\textbf{Mitigation:} Use one primary model only, keep the benchmark fixed at about 300 examples, checkpoint results, and prioritize the fixed-policy comparison before the budget sweep.
+
+\section{Expected Contribution}
+I expect this project to contribute a small but meaningful methodological idea: a \textbf{budget-aware selective-inference framework} that combines adaptive reasoning routing with cost-aware search for difficult cases. The contribution is intentionally modest: it is not a claim of a new learned reasoning architecture, but a clearly specified and reproducible inference policy for studying reasoning-cost tradeoffs. Even if the implementation remains lightweight, the project should still provide:
+\begin{itemize}[leftmargin=1.2em,itemsep=0.08em]
+    \item a clean comparison between fixed reasoning baselines and adaptive reasoning,
+    \item a cost-aware extension of test-time reasoning with explicit total-cost accounting,
+    \item ablation evidence separating routing effects from search effects,
+    \item a concrete analysis of when extra reasoning is useful under limited compute.
+\end{itemize}
+
+\section{Timeline}
+\textbf{Week 1:} Set up Qwen3-4B-Instruct-2507 in Colab, finalize the answer parser, create the fixed development and evaluation splits, and run Direct / CoT / Self-Consistency on a small sample.
+
+\textbf{Week 2:} Implement adaptive routing, define and freeze the stopping signals and thresholds on the development split, and debug the minimal system on 20--30 examples.
+
+\textbf{Week 3:} Implement cost-aware search, run the fixed-policy comparison on the full evaluation set, and collect token and latency metrics.
+
+\textbf{Week 4:} Run the two ablations, produce the matched-budget and frontier plots, compute bootstrap confidence intervals, and prepare tables plus qualitative examples.
+
+\end{document}

@@ -1,0 +1,39 @@
+experiment:
+  name: adaptive_reasoning_qwen
+  seed: 42
+  output_dir: outputs
+
+model:
+  model_name_or_path: models/Qwen3-4B-Instruct-2507
+  device_map: auto
+  load_in_4bit: true
+  max_new_tokens: 256
+  temperature: 0.0
+
+datasets:
+  root_dir: dataset
+  dev_split:
+    gsm8k: 10
+    bbh_date_understanding: 10
+    bbh_logical_deduction_three_objects: 5
+    mmlu: 5
+  eval_split:
+    gsm8k: 100
+    bbh_date_understanding: 50
+    bbh_logical_deduction_three_objects: 50
+    mmlu: 100
+
+reasoning:
+  tau_0: 0.8
+  tau_1: 0.7
+  tau_expand: 0.05
+  lambda_cost: 0.1
+  beam_size: 2
+  branching_factor: 2
+  max_depth: 2
+  self_consistency_samples: 3
+
+runtime:
+  batch_size: 1
+  warmup_examples: 2
+  save_predictions: true

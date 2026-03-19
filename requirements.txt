@@ -1,0 +1,9 @@
+PyYAML>=6.0
+tqdm>=4.66
+transformers>=4.44
+torch>=2.2
+accelerate>=0.33
+bitsandbytes>=0.43
+datasets>=2.20
+numpy>=1.26
+scikit-learn>=1.5
