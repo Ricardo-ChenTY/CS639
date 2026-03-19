@@ -1,17 +1,19 @@
 experiment:
   name: adaptive_reasoning_qwen
   seed: 42
-  output_dir: outputs
+  output_dir: /content/drive/MyDrive/CS639/outputs
 
 model:
-  model_name_or_path: models/Qwen3-4B-Instruct-2507
+  model_name_or_path: /content/drive/MyDrive/CS639/models/Qwen3-4B-Instruct-2507-FP8
   device_map: auto
-  load_in_4bit: true
+  torch_dtype: auto
+  attn_implementation: sdpa
+  trust_remote_code: false
   max_new_tokens: 256
   temperature: 0.0
 
 datasets:
-  root_dir: dataset
+  root_dir: /content/drive/MyDrive/CS639/dataset
   dev_split:
     gsm8k: 10
     bbh_date_understanding: 10

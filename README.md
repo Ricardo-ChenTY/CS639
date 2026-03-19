@@ -28,9 +28,33 @@ pip install -r requirements.txt
 python scripts/run_experiment.py --config configs/default.yaml
 ```
 
+To download and freeze the proposal subsets with a fixed seed:
+
+```bash
+python scripts/download_datasets.py --root-dir /content/drive/MyDrive/CS639/dataset --overwrite
+```
+
+## Google Drive Layout
+
+If you run in Google Colab, the default config already assumes this layout after mounting Drive:
+
+```text
+/content/drive/MyDrive/CS639/
+  models/
+  dataset/
+  outputs/
+```
+
+Mount Drive in Colab before running experiments:
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
 ## Intended Workflow
 
-- Add dataset loaders in `src/data/datasets.py`
+- Use `scripts/download_datasets.py` to create frozen subsets under `dataset/splits/`
 - Implement model loading and text generation in `src/llm/loader.py`
 - Fill in prompting logic in `src/prompts/templates.py`
 - Finish baseline methods in `src/baselines/`
