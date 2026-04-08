@@ -1,6 +1,6 @@
-# CS639 Project Scaffold
+# CS639 Project
 
-This repository is a minimal experiment scaffold for the proposal in [full_proposal_revised.tex](/Users/ricardochen/CS639/full_proposal_revised.tex).
+This repository implements the current proposal in [full_proposal_revised.tex](/Users/ricardochen/CS639/full_proposal_revised.tex), including direct answering, zero-shot CoT, self-consistency, and adaptive reasoning with cost-aware search.
 
 ## Directory Layout
 
@@ -28,11 +28,32 @@ pip install -r requirements.txt
 python scripts/run_experiment.py --config configs/default.yaml
 ```
 
+To run all currently implemented methods in one shot:
+
+```bash
+python scripts/run_all_experiments.py --config configs/default.yaml
+```
+
+To tune the adaptive controller once on the frozen dev split and write a frozen config:
+
+```bash
+python scripts/tune_reasoning.py --config configs/default.yaml
+python scripts/run_all_experiments.py --config configs/default_tuned.yaml
+```
+
 To download and freeze the proposal subsets with a fixed seed:
 
 ```bash
-python scripts/download_datasets.py --root-dir /content/drive/MyDrive/CS639/dataset --overwrite
+python scripts/download_datasets.py \
+  --root-dir /content/drive/MyDrive/CS639/dataset \
+  --hf-cache-dir /content/drive/MyDrive/CS639/dataset/hf_cache \
+  --overwrite
 ```
+
+The script downloads from Hugging Face `datasets`:
+- `openai/gsm8k`
+- `lukaemon/bbh`
+- `cais/mmlu`
 
 ## Google Drive Layout
 
@@ -52,12 +73,10 @@ from google.colab import drive
 drive.mount('/content/drive')
 ```
 
-## Intended Workflow
+## Current Workflow
 
 - Use `scripts/download_datasets.py` to create frozen subsets under `dataset/splits/`
-- Implement model loading and text generation in `src/llm/loader.py`
-- Fill in prompting logic in `src/prompts/templates.py`
-- Finish baseline methods in `src/baselines/`
-- Extend adaptive routing in `src/routing/adaptive.py`
-- Extend budget-aware search in `src/search/cost_aware.py`
-- Use `outputs/` for saved predictions and metrics
+- Adjust `configs/default.yaml` for your model path, dataset root, and budget thresholds
+- Tune `tau_0`, `tau_1`, `tau_expand`, and `lambda_cost` once on the dev split with `scripts/tune_reasoning.py`
+- Run `scripts/run_all_experiments.py` to compare direct, CoT, self-consistency, and adaptive search
+- Inspect `outputs/` for per-example records and summary metrics

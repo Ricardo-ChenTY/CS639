@@ -17,7 +17,7 @@ def build_record(
         example=example,
         method=method,
         prediction=prediction,
-        is_correct=answers_match(prediction, example.answer),
+        is_correct=answers_match(prediction, example.answer, example.task_name),
         total_tokens=total_tokens,
         latency_sec=latency_sec,
     )

@@ -32,7 +32,9 @@ class SearchNode:
     trace: str
     final_answer: str
     depth: int
+    prompt_tokens: int
     cumulative_tokens: int
+    latency_sec: float
     correctness_score: float
     utility: float
     metadata: dict[str, Any] = field(default_factory=dict)

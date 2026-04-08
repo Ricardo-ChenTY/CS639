@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Download proposal datasets from Hugging Face and freeze fixed JSONL splits."""
+
 import argparse
 import json
 import random
@@ -16,6 +18,12 @@ MMLU_SUBJECTS = [
     "college_biology",
 ]
 
+HF_SOURCES = {
+    "gsm8k": ("openai/gsm8k", "main"),
+    "bbh": ("lukaemon/bbh", None),
+    "mmlu": ("cais/mmlu", None),
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -31,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         "--overwrite",
         action="store_true",
         help="Overwrite existing frozen split files.",
+    )
+    parser.add_argument(
+        "--hf-cache-dir",
+        default=None,
+        help="Optional Hugging Face datasets cache directory.",
     )
     return parser.parse_args()
 
@@ -113,8 +126,8 @@ def distribute_total(total: int, buckets: int) -> list[int]:
     return [base + (1 if idx < remainder else 0) for idx in range(buckets)]
 
 
-def freeze_gsm8k(root_dir: Path, seed: int, overwrite: bool) -> None:
-    dataset = load_dataset("openai/gsm8k", "main")
+def freeze_gsm8k(root_dir: Path, seed: int, overwrite: bool, hf_cache_dir: str | None) -> None:
+    dataset = load_dataset("openai/gsm8k", "main", cache_dir=hf_cache_dir)
     dev_rows = [normalize_gsm8k("train", row, idx) for idx, row in enumerate(dataset["train"])]
     eval_rows = [normalize_gsm8k("test", row, idx) for idx, row in enumerate(dataset["test"])]
 
@@ -129,8 +142,9 @@ def freeze_bbh_task(
     eval_count: int,
     seed: int,
     overwrite: bool,
+    hf_cache_dir: str | None,
 ) -> None:
-    dataset = load_dataset("lukaemon/bbh", task_name)["test"]
+    dataset = load_dataset("lukaemon/bbh", task_name, cache_dir=hf_cache_dir)["test"]
     rows = [normalize_bbh(task_name, row, idx) for idx, row in enumerate(dataset)]
 
     if dev_count + eval_count > len(rows):
@@ -146,7 +160,7 @@ def freeze_bbh_task(
     save_jsonl(root_dir / "splits" / "eval" / f"{task_name}.jsonl", eval_sample, overwrite)
 
 
-def freeze_mmlu(root_dir: Path, seed: int, overwrite: bool) -> None:
+def freeze_mmlu(root_dir: Path, seed: int, overwrite: bool, hf_cache_dir: str | None) -> None:
     dev_counts = distribute_total(5, len(MMLU_SUBJECTS))
     eval_counts = distribute_total(100, len(MMLU_SUBJECTS))
 
@@ -154,7 +168,7 @@ def freeze_mmlu(root_dir: Path, seed: int, overwrite: bool) -> None:
     eval_rows: list[dict] = []
 
     for subject_idx, subject in enumerate(MMLU_SUBJECTS):
-        dataset = load_dataset("cais/mmlu", subject)
+        dataset = load_dataset("cais/mmlu", subject, cache_dir=hf_cache_dir)
         subject_dev = [
             normalize_mmlu(subject, "dev", row, idx)
             for idx, row in enumerate(dataset["dev"])
@@ -194,13 +208,28 @@ def main() -> None:
     root_dir = Path(args.root_dir)
     ensure_dir(root_dir)
 
-    print("Downloading and freezing GSM8K...")
-    freeze_gsm8k(root_dir, args.seed, args.overwrite)
+    print("Downloading datasets from Hugging Face...")
+    print(f"  GSM8K: {HF_SOURCES['gsm8k'][0]} / {HF_SOURCES['gsm8k'][1]}")
+    print(f"  BBH:   {HF_SOURCES['bbh'][0]}")
+    print(f"  MMLU:  {HF_SOURCES['mmlu'][0]}")
+    if args.hf_cache_dir:
+        print(f"  HF cache: {args.hf_cache_dir}")
 
-    print("Downloading and freezing BBH date_understanding...")
-    freeze_bbh_task(root_dir, "date_understanding", 10, 50, args.seed, args.overwrite)
+    print("Downloading and freezing GSM8K from Hugging Face...")
+    freeze_gsm8k(root_dir, args.seed, args.overwrite, args.hf_cache_dir)
 
-    print("Downloading and freezing BBH logical_deduction_three_objects...")
+    print("Downloading and freezing BBH date_understanding from Hugging Face...")
+    freeze_bbh_task(
+        root_dir,
+        "date_understanding",
+        10,
+        50,
+        args.seed,
+        args.overwrite,
+        args.hf_cache_dir,
+    )
+
+    print("Downloading and freezing BBH logical_deduction_three_objects from Hugging Face...")
     freeze_bbh_task(
         root_dir,
         "logical_deduction_three_objects",
@@ -208,10 +237,11 @@ def main() -> None:
         50,
         args.seed + 1,
         args.overwrite,
+        args.hf_cache_dir,
     )
 
-    print("Downloading and freezing MMLU...")
-    freeze_mmlu(root_dir, args.seed, args.overwrite)
+    print("Downloading and freezing MMLU from Hugging Face...")
+    freeze_mmlu(root_dir, args.seed, args.overwrite, args.hf_cache_dir)
 
     print("Writing manifest...")
     write_manifest(root_dir, args.seed, args.overwrite)

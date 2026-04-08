@@ -4,9 +4,9 @@ experiment:
   output_dir: /content/drive/MyDrive/CS639/outputs
 
 model:
-  model_name_or_path: /content/drive/MyDrive/CS639/models/Qwen3-4B-Instruct-2507-FP8
+  model_name_or_path: /content/drive/MyDrive/CS639/models/Qwen3-4B-Instruct-2507
   device_map: auto
-  torch_dtype: auto
+  torch_dtype: bfloat16
   attn_implementation: sdpa
   trust_remote_code: false
   max_new_tokens: 256
@@ -34,6 +34,8 @@ reasoning:
   branching_factor: 2
   max_depth: 2
   self_consistency_samples: 3
+  probe_max_new_tokens: 64
+  probe_temperature: 0.7
 
 runtime:
   batch_size: 1
