@@ -41,6 +41,15 @@ python scripts/tune_reasoning.py --config configs/default.yaml
 python scripts/run_all_experiments.py --config configs/default_tuned.yaml
 ```
 
+For a server-side pilot run without the notebook:
+
+```bash
+python scripts/download_model.py --local-dir models/Qwen3-4B-Instruct-2507
+python scripts/download_datasets.py --root-dir dataset --hf-cache-dir dataset/hf_cache --overwrite
+python scripts/make_pilot_config.py --output-config configs/pilot_server.yaml
+python scripts/run_all_experiments.py --config configs/pilot_server.yaml
+```
+
 To download and freeze the proposal subsets with a fixed seed:
 
 ```bash
