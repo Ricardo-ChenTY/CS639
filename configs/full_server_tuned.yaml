@@ -1,0 +1,39 @@
+experiment:
+  name: adaptive_reasoning_qwen
+  seed: 42
+  output_dir: /root/CS639/outputs/full
+model:
+  model_name_or_path: /root/CS639/models/Qwen3-4B-Instruct-2507
+  device_map: auto
+  torch_dtype: bfloat16
+  attn_implementation: sdpa
+  trust_remote_code: false
+  max_new_tokens: 256
+  temperature: 0.0
+datasets:
+  root_dir: /root/CS639/dataset
+  dev_split:
+    gsm8k: 10
+    bbh_date_understanding: 10
+    bbh_logical_deduction_three_objects: 5
+    mmlu: 5
+  eval_split:
+    gsm8k: 100
+    bbh_date_understanding: 50
+    bbh_logical_deduction_three_objects: 50
+    mmlu: 100
+reasoning:
+  tau_0: 1.0
+  tau_1: 1.0
+  tau_expand: 0.05
+  lambda_cost: 0.0
+  beam_size: 2
+  branching_factor: 2
+  max_depth: 2
+  self_consistency_samples: 3
+  probe_max_new_tokens: 64
+  probe_temperature: 0.7
+runtime:
+  batch_size: 1
+  warmup_examples: 2
+  save_predictions: true

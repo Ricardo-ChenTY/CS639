@@ -4,7 +4,7 @@ import re
 
 
 NUMERIC_PATTERN = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?")
-OPTION_PATTERN = re.compile(r"\b(?:option\s*)?\(?([A-D])\)?\b", re.IGNORECASE)
+OPTION_PATTERN = re.compile(r"\b(?:option\s*)?\(?([A-F])\)?\b", re.IGNORECASE)
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -42,7 +42,11 @@ def normalize_answer(text: str, task_name: str | None = None) -> str:
 
     option = _extract_option_label(collapsed)
     if option is not None and any(
-        token in (task_name or "").lower() for token in ("mmlu", "bbh", "choice", "multiple")
+        token in (task_name or "").lower()
+        for token in (
+            "mmlu", "bbh", "choice", "multiple",
+            "date_understanding", "logical_deduction",
+        )
     ):
         return option
 
