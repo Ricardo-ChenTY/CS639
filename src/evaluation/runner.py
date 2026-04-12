@@ -33,6 +33,7 @@ def run_experiment(config: dict, examples: list, llm, method: str) -> dict:
                 prediction=result.final_answer,
                 total_tokens=result.total_tokens,
                 latency_sec=result.latency_sec,
+                metadata=result.metadata,
             )
         )
 
@@ -60,6 +61,9 @@ def save_results(config: dict, method: str, records: list, summary: dict) -> Non
                     "is_correct": record.is_correct,
                     "total_tokens": record.total_tokens,
                     "latency_sec": record.latency_sec,
+                    "route": record.metadata.get("route"),
+                    "score": record.metadata.get("score"),
+                    "pre_scores": record.metadata.get("pre_scores"),
                 }
                 for record in records
             ],

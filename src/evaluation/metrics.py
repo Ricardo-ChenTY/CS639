@@ -12,6 +12,7 @@ def build_record(
     prediction: str,
     total_tokens: int,
     latency_sec: float,
+    metadata: dict | None = None,
 ) -> ExperimentRecord:
     return ExperimentRecord(
         example=example,
@@ -20,6 +21,7 @@ def build_record(
         is_correct=answers_match(prediction, example.answer, example.task_name),
         total_tokens=total_tokens,
         latency_sec=latency_sec,
+        metadata=metadata or {},
     )
 
 
