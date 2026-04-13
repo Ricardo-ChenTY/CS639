@@ -33,8 +33,8 @@ def candidate_grid() -> dict[str, list[float]]:
     # - 0.84 removed from tau_0/tau_1 (redundant between 0.67 and 1.0)
     # - 0.02 removed from tau_expand (negligible difference from 0.0)
     return {
-        "tau_0": [0.34, 0.50, 0.67, 1.0],
-        "tau_1": [0.34, 0.50, 0.67, 1.0],
+        "tau_0": [0.34, 0.50, 0.66, 1.0],  # 0.66 < 2/3=0.666... so catches ≥2-verifier agreement
+        "tau_1": [0.34, 0.50, 0.66, 1.0],
         "tau_expand": [0.0, 0.05, 0.1],
         "lambda_cost": [0.0, 0.1, 0.2, 0.3],
     }

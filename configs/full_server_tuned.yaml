@@ -23,9 +23,9 @@ datasets:
     bbh_logical_deduction_three_objects: 50
     mmlu: 100
 reasoning:
-  tau_0: 1.0
-  tau_1: 1.0
-  tau_expand: 0.05
+  tau_0: 0.66
+  tau_1: 0.66
+  tau_expand: 0.1
   lambda_cost: 0.0
   beam_size: 2
   branching_factor: 2
