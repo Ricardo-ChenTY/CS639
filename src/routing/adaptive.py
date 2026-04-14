@@ -7,43 +7,59 @@ from src.types import Example, GenerationResult
 from src.verifiers import compute_belief_score
 
 
-def run_adaptive_reasoning(example: Example, llm, config: dict) -> GenerationResult:
-    direct = run_direct(example, llm, config)
-    score_0, evidence_0 = compute_belief_score(
-        result=direct,
-        prompt=direct.metadata["prompt"],
+def _score(result: GenerationResult, example: Example, llm, config: dict) -> tuple[float, dict]:
+    return compute_belief_score(
+        result=result,
+        prompt=result.metadata.get("prompt", ""),
         task_name=example.task_name,
         llm=llm,
         config=config,
     )
-    direct.prompt_tokens += evidence_0["probe_prompt_tokens"]
-    direct.completion_tokens += evidence_0["probe_completion_tokens"]
-    direct.latency_sec += evidence_0["probe_latency_sec"]
-    direct.metadata["belief"] = evidence_0
+
+
+def run_adaptive_reasoning(example: Example, llm, config: dict) -> GenerationResult:
+    """Full hierarchical method: direct → CoT → search."""
+    direct = run_direct(example, llm, config)
+    score_0, evidence_0 = _score(direct, example, llm, config)
+    direct.metadata.update({"belief": evidence_0, "score": score_0})
     if score_0 >= config["reasoning"]["tau_0"]:
         direct.metadata["route"] = "direct"
-        direct.metadata["score"] = score_0
         return direct
 
     cot = run_cot(example, llm, config)
-    score_1, evidence_1 = compute_belief_score(
-        result=cot,
-        prompt=cot.metadata["prompt"],
-        task_name=example.task_name,
-        llm=llm,
-        config=config,
-    )
-    cot.prompt_tokens += evidence_1["probe_prompt_tokens"]
-    cot.completion_tokens += evidence_1["probe_completion_tokens"]
-    cot.latency_sec += evidence_1["probe_latency_sec"]
-    cot.metadata["belief"] = evidence_1
+    score_1, evidence_1 = _score(cot, example, llm, config)
+    cot.metadata.update({"belief": evidence_1, "score": score_1})
     if score_1 >= config["reasoning"]["tau_1"]:
         cot.metadata["route"] = "cot"
-        cot.metadata["score"] = score_1
         return cot
 
     searched = run_cost_aware_search(example, llm, config, seed_result=cot)
+    searched.metadata.update({
+        "route": "search",
+        "pre_scores": {"direct": score_0, "cot": score_1},
+    })
+    return searched
+
+
+def run_meta_control_only(example: Example, llm, config: dict) -> GenerationResult:
+    """Ablation: direct → CoT routing only, no hard-case search."""
+    direct = run_direct(example, llm, config)
+    score_0, evidence_0 = _score(direct, example, llm, config)
+    direct.metadata.update({"belief": evidence_0, "score": score_0, "route": "direct"})
+    if score_0 >= config["reasoning"]["tau_0"]:
+        return direct
+
+    cot = run_cot(example, llm, config)
+    score_1, evidence_1 = _score(cot, example, llm, config)
+    cot.metadata.update({"belief": evidence_1, "score": score_1, "route": "cot"})
+    return cot
+
+
+def run_deliberation_only(example: Example, llm, config: dict) -> GenerationResult:
+    """Ablation: always run search after CoT, no selective meta-control."""
+    cot = run_cot(example, llm, config)
+    _, evidence_1 = _score(cot, example, llm, config)
+    cot.metadata["belief"] = evidence_1
+    searched = run_cost_aware_search(example, llm, config, seed_result=cot)
     searched.metadata["route"] = "search"
-    searched.metadata["pre_scores"] = {"direct": score_0, "cot": score_1}
-    searched.metadata["pre_belief"] = {"direct": evidence_0, "cot": evidence_1}
     return searched

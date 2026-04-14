@@ -100,10 +100,14 @@ def run_cost_aware_search(
                 max_new_tokens=config["model"]["max_new_tokens"],
                 temperature=max(config["model"]["temperature"], 0.7),
                 n=config["reasoning"]["branching_factor"],
+                return_logprobs=True,
             )
             for item in outputs:
                 trace = (node.trace + "\n" + item["text"]).strip()
                 answer = extract_final_answer(item["text"])
+                node_meta: dict = {"prompt": prompt}
+                if "answer_logprob" in item:
+                    node_meta["answer_logprob"] = item["answer_logprob"]
                 candidate = SearchNode(
                     trace=trace,
                     final_answer=answer,
@@ -115,7 +119,7 @@ def run_cost_aware_search(
                     latency_sec=node.latency_sec + item.get("latency_sec", 0.0),
                     correctness_score=0.0,
                     utility=0.0,
-                    metadata={"prompt": prompt},
+                    metadata=node_meta,
                 )
                 belief_score, belief_metadata = compute_belief_score(
                     result=GenerationResult(

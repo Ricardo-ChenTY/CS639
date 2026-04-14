@@ -9,7 +9,11 @@ from src.baselines.cot import run_cot
 from src.baselines.direct import run_direct
 from src.baselines.self_consistency import run_self_consistency
 from src.evaluation.metrics import build_record, summarize
-from src.routing.adaptive import run_adaptive_reasoning
+from src.routing.adaptive import (
+    run_adaptive_reasoning,
+    run_deliberation_only,
+    run_meta_control_only,
+)
 
 
 METHODS = {
@@ -17,6 +21,8 @@ METHODS = {
     "cot": run_cot,
     "self_consistency": run_self_consistency,
     "adaptive": run_adaptive_reasoning,
+    "meta_control_only": run_meta_control_only,
+    "deliberation_only": run_deliberation_only,
 }
 
 

@@ -14,7 +14,15 @@ from src.evaluation.runner import run_experiment
 from src.llm.loader import build_llm
 
 
-METHODS = ["direct", "cot", "self_consistency", "adaptive"]
+# Baselines first, then full adaptive, then ablations
+METHODS = [
+    "direct",
+    "cot",
+    "self_consistency",
+    "adaptive",
+    "meta_control_only",
+    "deliberation_only",
+]
 
 
 def main() -> None:
@@ -22,6 +30,12 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Run all CS639 experiment methods.")
     parser.add_argument("--config", required=True, help="Path to YAML config.")
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        default=METHODS,
+        help="Subset of methods to run (default: all).",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -29,7 +43,7 @@ def main() -> None:
     llm = build_llm(config["model"])
 
     all_summaries: dict[str, dict] = {}
-    for method in METHODS:
+    for method in args.methods:
         print(f"\n=== Running {method} ===")
         summary = run_experiment(config, examples, llm, method)
         all_summaries[method] = summary
