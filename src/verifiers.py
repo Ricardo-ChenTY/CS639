@@ -29,6 +29,33 @@ def logprob_confidence_score(result: GenerationResult) -> float:
     return float(math.exp(max(float(logprob), -10.0)))
 
 
+def sampling_consistency_score(
+    prompt: str,
+    t0_answer: str,
+    task_name: str,
+    llm: Any,
+    config: dict,
+    k: int = 3,
+    temperature: float = 0.7,
+) -> float:
+    """Sample k answers at temperature; return fraction agreeing with the T=0 answer.
+
+    Wrong answers tend to have higher token-level entropy, so consistency < 1.0
+    is a better discrimination signal than logprob for RLHF-tuned models.
+    """
+    outputs = llm.generate(
+        prompt,
+        max_new_tokens=config["model"]["max_new_tokens"],
+        temperature=temperature,
+        n=k,
+    )
+    matches = sum(
+        1 for out in outputs
+        if answers_match(extract_final_answer(out["text"]), t0_answer, task_name)
+    )
+    return matches / k
+
+
 def compute_belief_score(
     *,
     result: GenerationResult,
@@ -49,4 +76,27 @@ def compute_belief_score(
         "probe_prompt_tokens": 0,
         "probe_completion_tokens": 0,
         "probe_latency_sec": 0.0,
+    }
+
+
+def compute_belief_score_sc(
+    *,
+    result: GenerationResult,
+    prompt: str,
+    task_name: str,
+    llm: Any,
+    config: dict,
+) -> tuple[float, dict[str, Any]]:
+    """Belief score variant: replace logprob confidence with sampling consistency."""
+    verifier = verifier_consistency_score(result, task_name)
+    consistency = sampling_consistency_score(
+        prompt, result.final_answer, task_name, llm, config
+    )
+    format_score = format_constraint_score(result.final_answer, task_name)
+    belief = (verifier + consistency + format_score) / 3.0
+    return belief, {
+        "V": verifier,
+        "A": consistency,
+        "A_type": "sampling_consistency",
+        "G": format_score,
     }

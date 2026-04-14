@@ -38,6 +38,18 @@ EXTRA_RUNS = [
         "method": "deliberation_only",
         "overrides": {"reasoning": {"lambda_cost": 0.3}},
     },
+    # Task-aware static routing (oracle-guided upper bound)
+    {
+        "tag": "task_aware",
+        "method": "task_aware",
+        "overrides": {},
+    },
+    # Adaptive routing with sampling-consistency verifier
+    {
+        "tag": "adaptive_sc_verifier",
+        "method": "adaptive_sc_verifier",
+        "overrides": {},
+    },
 ]
 
 

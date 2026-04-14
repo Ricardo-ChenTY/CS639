@@ -11,8 +11,10 @@ from src.baselines.self_consistency import run_self_consistency
 from src.evaluation.metrics import build_record, summarize
 from src.routing.adaptive import (
     run_adaptive_reasoning,
+    run_adaptive_sc_verifier,
     run_deliberation_only,
     run_meta_control_only,
+    run_task_aware,
 )
 
 
@@ -23,6 +25,8 @@ METHODS = {
     "adaptive": run_adaptive_reasoning,
     "meta_control_only": run_meta_control_only,
     "deliberation_only": run_deliberation_only,
+    "task_aware": run_task_aware,
+    "adaptive_sc_verifier": run_adaptive_sc_verifier,
 }
 
 
