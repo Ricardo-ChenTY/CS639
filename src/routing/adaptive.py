@@ -95,6 +95,8 @@ def run_task_aware(example: Example, llm, config: dict) -> GenerationResult:
     """
     if example.task_name in _SEARCH_BENEFICIAL_TASKS:
         cot = run_cot(example, llm, config)
+        _, evidence_1 = _score(cot, example, llm, config)
+        cot.metadata["belief"] = evidence_1
         searched = run_cost_aware_search(example, llm, config, seed_result=cot)
         searched.metadata["route"] = "search"
         return searched
