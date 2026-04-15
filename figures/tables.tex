@@ -1,0 +1,46 @@
+% ── Main Results Table ──────────────────────────────────
+\begin{table}[t]
+\centering
+\caption{Overall accuracy, average tokens, and J-score ($\mu{=}0.1$) on 300 evaluation examples. Best value in \textbf{bold}.}
+\label{tab:main_results}
+\begin{tabular}{lccc}
+\toprule
+Method & Accuracy & Avg Tokens & J-score \\
+\midrule
+\midrule
+\multicolumn{4}{l}{\textit{Baselines}} \\
+  Direct & 0.677 & 351 & 0.657 \\
+  CoT & 0.567 & 364 & 0.547 \\
+  SC-3 & 0.540 & 1092 & 0.480 \\
+  SC-5 & 0.600 & 1819 & 0.500 \\
+\midrule
+\multicolumn{4}{l}{\textit{Ablations}} \\
+  Adaptive & 0.677 & 351 & 0.657 \\
+  Meta-Control & 0.677 & 351 & 0.657 \\
+  Deliberation ($\lambda$=0) & 0.630 & 566 & 0.599 \\
+\midrule
+\multicolumn{4}{l}{\textit{Ours}} \\
+  Deliberation ($\lambda$=0.1) & 0.707 & 469 & 0.681 \\
+  Task-Aware ($\lambda$=0.1) & \textbf{0.713} & 431 & \textbf{0.690} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ── Ablation Table ─────────────────────────────────────
+\begin{table}[t]
+\centering
+\caption{Ablation study. \checkmark~indicates the component is active.}
+\label{tab:ablation}
+\begin{tabular}{lcccc}
+\toprule
+Method & Meta-Control & Deliberation & Optimal $\lambda$ & Accuracy \\
+\midrule
+  Direct & \xmark & \xmark & \xmark & 0.677 \\
+  Adaptive (full) & \cmark & \cmark & \xmark & 0.677 \\
+  Meta-Control only & \cmark & \xmark & \xmark & 0.677 \\
+  Deliberation only & \xmark & \cmark & \xmark & 0.630 \\
+  Deliberation ($\lambda$=0.1) & \xmark & \cmark & \cmark & 0.707 \\
+  Task-Aware ($\lambda$=0.1) & task & \cmark & \cmark & \textbf{0.713} \\
+\bottomrule
+\end{tabular}
+\end{table}
