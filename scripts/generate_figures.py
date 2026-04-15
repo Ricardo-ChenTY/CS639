@@ -107,42 +107,66 @@ def bootstrap_ci(correct: list[bool], n_boot: int = 2000, ci: float = 0.95):
 # ---------------------------------------------------------------------------
 
 def fig_accuracy_cost(all_records: dict, fig_dir: Path) -> None:
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(9, 5.5))
 
-    # Highlight best methods
     highlight = {"task_aware_lambda0.1", "deliberation_lambda0.1", "direct"}
 
+    # Collect all points first
+    points = {}
     for method, records in all_records.items():
         s = method_stats(records)
-        size = 130 if method in highlight else 70
-        alpha = 1.0 if method in highlight else 0.65
-        ax.scatter(s["avg_tokens"], s["accuracy"],
-                   color=COLORS.get(method, "gray"), s=size, zorder=3, alpha=alpha,
-                   edgecolors="white" if method in highlight else "none", linewidths=1.2)
-        label = METHOD_LABELS.get(method, method)
-        offsets = {
-            "direct": (-10, 8),
-            "cot": (10, -14),
-            "adaptive": (-10, -14),
-            "meta_control_only": (8, 6),
-            "adaptive_sc_verifier": (8, -14),
-            "deliberation_lambda0.2": (8, -14),
-            "deliberation_lambda0.3": (8, 6),
-            "self_consistency": (-10, 8),
-            "task_aware": (8, 6),
-        }
-        ox, oy = offsets.get(method, (10, 5))
-        ax.annotate(label, (s["avg_tokens"], s["accuracy"]),
-                    textcoords="offset points", xytext=(ox, oy),
-                    fontsize=7, color=COLORS.get(method, "gray"),
-                    fontweight="bold" if method in highlight else "normal")
+        points[method] = (s["avg_tokens"], s["accuracy"])
 
-    ax.axhline(0.677, color=COLORS["direct"], linestyle="--", linewidth=1, alpha=0.4)
+    # Draw dots
+    for method, (x, y) in points.items():
+        size = 140 if method in highlight else 65
+        alpha = 1.0 if method in highlight else 0.7
+        ax.scatter(x, y, color=COLORS.get(method, "gray"), s=size, zorder=3,
+                   alpha=alpha,
+                   edgecolors="white" if method in highlight else "none",
+                   linewidths=1.5)
+
+    # --- manually positioned labels with leader arrows for dense cluster ---
+    # Methods that live in the ~350-tok cluster need staggered text positions
+    arrow_kw = dict(arrowstyle="-", color="gray", lw=0.8,
+                    connectionstyle="arc3,rad=0.0")
+
+    label_positions = {
+        # (text_x, text_y, ha, va)  — data coordinates
+        "task_aware_lambda0.1":    (560,  0.730, "left",   "center"),
+        "deliberation_lambda0.1":  (560,  0.710, "left",   "center"),
+        "direct":                  (210,  0.690, "right",  "center"),
+        "meta_control_only":       (210,  0.672, "right",  "center"),
+        "adaptive":                (210,  0.655, "right",  "center"),
+        "adaptive_sc_verifier":    (210,  0.638, "right",  "center"),
+        "cot":                     (230,  0.540, "right",  "center"),
+        "deliberation_lambda0.2":  (230,  0.555, "right",  "center"),
+        "deliberation_lambda0.3":  (230,  0.570, "right",  "center"),
+        "deliberation_only":       (690,  0.620, "left",   "center"),
+        "task_aware":              (980,  0.643, "left",   "center"),
+        "self_consistency":        (1100, 0.520, "left",   "center"),
+        "sc5":                     (1900, 0.590, "left",   "center"),
+    }
+
+    for method, (tx, ty, ha, va) in label_positions.items():
+        if method not in points:
+            continue
+        px, py = points[method]
+        label = METHOD_LABELS.get(method, method)
+        fw = "bold" if method in highlight else "normal"
+        ax.annotate(
+            label, xy=(px, py), xytext=(tx, ty),
+            ha=ha, va=va, fontsize=7.5,
+            color=COLORS.get(method, "gray"), fontweight=fw,
+            arrowprops=arrow_kw if abs(tx - px) > 20 or abs(ty - py) > 0.005 else None,
+        )
+
+    ax.axhline(0.677, color=COLORS["direct"], linestyle="--", linewidth=1, alpha=0.35)
     ax.set_xlabel("Average Tokens per Example", fontsize=11)
     ax.set_ylabel("Accuracy", fontsize=11)
     ax.set_title("Accuracy–Cost Tradeoff (All Methods)", fontsize=12)
-    ax.set_xlim(200, 2100)
-    ax.set_ylim(0.46, 0.78)
+    ax.set_xlim(100, 2150)
+    ax.set_ylim(0.47, 0.77)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     _save(fig, fig_dir / "fig1_accuracy_cost")
