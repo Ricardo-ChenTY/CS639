@@ -254,24 +254,50 @@ def fig_lambda_sweep(all_records: dict, fig_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def fig_belief_histogram(all_records: dict, fig_dir: Path) -> None:
+    from scipy.stats import gaussian_kde
+
     if "adaptive" not in all_records:
         return
     records = all_records["adaptive"]
-    correct_scores = [r["score"] for r in records if r["is_correct"] and r.get("score") is not None]
-    wrong_scores   = [r["score"] for r in records if not r["is_correct"] and r.get("score") is not None]
+    correct_scores = np.array([r["score"] for r in records if r["is_correct"] and r.get("score") is not None])
+    wrong_scores   = np.array([r["score"] for r in records if not r["is_correct"] and r.get("score") is not None])
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    bins = np.linspace(0.55, 1.0, 30)
-    ax.hist(correct_scores, bins=bins, alpha=0.6, color="#2196F3", label=f"Correct (n={len(correct_scores)})")
-    ax.hist(wrong_scores,   bins=bins, alpha=0.6, color="#F44336", label=f"Wrong (n={len(wrong_scores)})")
-    ax.axvline(np.mean(correct_scores), color="#1565C0", linestyle="--", linewidth=1.5,
-               label=f"Correct mean={np.mean(correct_scores):.3f}")
-    ax.axvline(np.mean(wrong_scores),   color="#B71C1C", linestyle="--", linewidth=1.5,
-               label=f"Wrong mean={np.mean(wrong_scores):.3f}")
+    # Focus on [0.88, 1.0] where 299/300 samples live
+    lo, hi = 0.88, 1.002
+    bins = np.linspace(lo, hi, 25)
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+
+    ax.hist(correct_scores, bins=bins, alpha=0.45, color="#2196F3",
+            label=f"Correct (n={len(correct_scores)})", density=False)
+    ax.hist(wrong_scores,   bins=bins, alpha=0.45, color="#F44336",
+            label=f"Wrong (n={len(wrong_scores)})", density=False)
+
+    # KDE overlay (scaled to count)
+    bin_width = bins[1] - bins[0]
+    xs = np.linspace(lo, hi, 300)
+    for scores, color, ls in [
+        (correct_scores, "#1565C0", "-"),
+        (wrong_scores,   "#B71C1C", "-"),
+    ]:
+        clipped = scores[(scores >= lo) & (scores <= hi)]
+        if len(clipped) > 2:
+            kde = gaussian_kde(clipped, bw_method=0.15)
+            ax.plot(xs, kde(xs) * len(scores) * bin_width,
+                    color=color, linewidth=2, linestyle=ls)
+
+    # Mean lines
+    ax.axvline(correct_scores.mean(), color="#1565C0", linestyle="--",
+               linewidth=1.5, label=f"Correct mean = {correct_scores.mean():.3f}")
+    ax.axvline(wrong_scores.mean(),   color="#B71C1C", linestyle="--",
+               linewidth=1.5, label=f"Wrong mean = {wrong_scores.mean():.3f}")
+
     ax.set_xlabel("Belief Score", fontsize=11)
     ax.set_ylabel("Count", fontsize=11)
-    ax.set_title("Belief Score Distribution: Correct vs Wrong\n(AUC = 0.361, worse than random)", fontsize=11)
-    ax.legend(fontsize=8.5)
+    ax.set_title("Belief Score Distribution: Correct vs Wrong\n"
+                 "AUC = 0.361 (worse than random — RLHF overconfidence)", fontsize=10.5)
+    ax.set_xlim(lo, hi)
+    ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     _save(fig, fig_dir / "fig4_belief_histogram")
