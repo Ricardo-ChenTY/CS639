@@ -107,47 +107,61 @@ def bootstrap_ci(correct: list[bool], n_boot: int = 2000, ci: float = 0.95):
 # ---------------------------------------------------------------------------
 
 def fig_accuracy_cost(all_records: dict, fig_dir: Path) -> None:
-    from adjustText import adjust_text
-
-    fig, ax = plt.subplots(figsize=(9, 5.5))
-
+    # Only show methods that are meaningfully distinct in token-accuracy space.
+    # Redundant methods (adaptive≈meta_control≈direct, λ0.2≈λ0.3≈cot,
+    # task_aware≈deliberation_only) are excluded; they appear in the table.
+    SHOW = [
+        "direct",
+        "cot",
+        "self_consistency",
+        "sc5",
+        "deliberation_only",
+        "deliberation_lambda0.1",
+        "task_aware_lambda0.1",
+    ]
     highlight = {"task_aware_lambda0.1", "deliberation_lambda0.1"}
-    texts = []
 
-    for method, records in all_records.items():
-        s = method_stats(records)
+    # Manual label offsets (x_pts, y_pts) — tuned for this 7-point layout
+    OFFSETS = {
+        "direct":                 (-12,  10),
+        "cot":                    ( 10, -14),
+        "self_consistency":       ( 10,   8),
+        "sc5":                    ( 10,   8),
+        "deliberation_only":      ( 10,  -14),
+        "deliberation_lambda0.1": ( 10,  -14),
+        "task_aware_lambda0.1":   ( 10,   8),
+    }
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    for method in SHOW:
+        if method not in all_records:
+            continue
+        s = method_stats(all_records[method])
         x, y = s["avg_tokens"], s["accuracy"]
-        size  = 140 if method in highlight else 70
-        alpha = 1.0 if method in highlight else 0.72
+        size  = 130 if method in highlight else 80
         ec    = "white" if method in highlight else "none"
-        ax.scatter(x, y, color=COLORS.get(method, "gray"), s=size,
-                   alpha=alpha, zorder=3, edgecolors=ec, linewidths=1.2)
-        label = METHOD_LABELS.get(method, method)
-        fw = "bold" if method in highlight else "normal"
-        t = ax.text(x, y, label, fontsize=7.5,
-                    color=COLORS.get(method, "gray"), fontweight=fw)
-        texts.append(t)
-
-    adjust_text(
-        texts, ax=ax,
-        expand_points=(1.6, 1.8),
-        expand_text=(1.3, 1.4),
-        force_points=(0.4, 0.6),
-        force_text=(0.3, 0.4),
-        arrowprops=dict(arrowstyle="-", color="gray", lw=0.6),
-        only_move={"points": "xy", "text": "xy"},
-    )
+        ax.scatter(x, y, color=COLORS[method], s=size, zorder=3,
+                   edgecolors=ec, linewidths=1.3)
+        ox, oy = OFFSETS.get(method, (10, 8))
+        ax.annotate(
+            METHOD_LABELS[method], xy=(x, y),
+            xytext=(ox, oy), textcoords="offset points",
+            fontsize=9, color=COLORS[method],
+            fontweight="bold" if method in highlight else "normal",
+            ha="right" if ox < 0 else "left", va="center",
+        )
 
     ax.axhline(0.677, color=COLORS["direct"], linestyle="--",
                linewidth=1, alpha=0.4, zorder=2)
-    ax.text(2080, 0.680, "Direct baseline", ha="right",
-            fontsize=7.5, color=COLORS["direct"], alpha=0.7)
+    ax.text(1980, 0.681, "Direct baseline", ha="right",
+            fontsize=8, color=COLORS["direct"], alpha=0.75)
 
     ax.set_xlabel("Average Tokens per Example", fontsize=11)
     ax.set_ylabel("Accuracy", fontsize=11)
-    ax.set_title("Accuracy–Cost Tradeoff (All Methods)", fontsize=12)
-    ax.set_xlim(100, 2200)
-    ax.set_ylim(0.46, 0.79)
+    ax.set_title("Accuracy–Cost Tradeoff", fontsize=12)
+    ax.set_xlim(200, 2100)
+    ax.set_ylim(0.49, 0.77)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     _save(fig, fig_dir / "fig1_accuracy_cost")
