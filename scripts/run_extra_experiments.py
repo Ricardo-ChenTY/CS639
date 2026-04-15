@@ -44,6 +44,12 @@ EXTRA_RUNS = [
         "method": "task_aware",
         "overrides": {},
     },
+    # Task-aware with optimal lambda (lambda=0.1 from sweep)
+    {
+        "tag": "task_aware_lambda0.1",
+        "method": "task_aware",
+        "overrides": {"reasoning": {"lambda_cost": 0.1}},
+    },
     # Adaptive routing with sampling-consistency verifier
     {
         "tag": "adaptive_sc_verifier",
