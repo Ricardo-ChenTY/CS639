@@ -107,62 +107,49 @@ def bootstrap_ci(correct: list[bool], n_boot: int = 2000, ci: float = 0.95):
 # ---------------------------------------------------------------------------
 
 def fig_accuracy_cost(all_records: dict, fig_dir: Path) -> None:
-    """Accuracy–cost scatter using legend + marker shapes.
+    from adjustText import adjust_text
 
-    Three groups shown with distinct markers:
-      ○  Baselines   (direct, cot, SC-3, SC-5)
-      △  Ablations   (adaptive, meta_control_only, deliberation_only, λ sweep)
-      ★  Proposed    (task_aware_lambda0.1, deliberation_lambda0.1)
-    """
-    # Groups and their markers
-    groups = [
-        ("Baselines",  ["direct", "cot", "self_consistency", "sc5"],
-         "o", 80, 0.75),
-        ("Ablations",  ["adaptive", "meta_control_only",
-                        "deliberation_only", "deliberation_lambda0.2",
-                        "deliberation_lambda0.3", "adaptive_sc_verifier"],
-         "^", 80, 0.75),
-        ("Proposed",   ["deliberation_lambda0.1", "task_aware_lambda0.1"],
-         "*", 220, 1.0),
-    ]
+    fig, ax = plt.subplots(figsize=(9, 5.5))
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    highlight = {"task_aware_lambda0.1", "deliberation_lambda0.1"}
+    texts = []
 
-    for grp_name, methods, marker, size, alpha in groups:
-        for i, method in enumerate(methods):
-            if method not in all_records:
-                continue
-            s = method_stats(all_records[method])
-            ax.scatter(
-                s["avg_tokens"], s["accuracy"],
-                marker=marker, s=size, alpha=alpha, zorder=3,
-                color=COLORS.get(method, "gray"),
-                edgecolors="white", linewidths=0.8,
-                label=METHOD_LABELS.get(method, method),
-            )
+    for method, records in all_records.items():
+        s = method_stats(records)
+        x, y = s["avg_tokens"], s["accuracy"]
+        size  = 140 if method in highlight else 70
+        alpha = 1.0 if method in highlight else 0.72
+        ec    = "white" if method in highlight else "none"
+        ax.scatter(x, y, color=COLORS.get(method, "gray"), s=size,
+                   alpha=alpha, zorder=3, edgecolors=ec, linewidths=1.2)
+        label = METHOD_LABELS.get(method, method)
+        fw = "bold" if method in highlight else "normal"
+        t = ax.text(x, y, label, fontsize=7.5,
+                    color=COLORS.get(method, "gray"), fontweight=fw)
+        texts.append(t)
+
+    adjust_text(
+        texts, ax=ax,
+        expand_points=(1.6, 1.8),
+        expand_text=(1.3, 1.4),
+        force_points=(0.4, 0.6),
+        force_text=(0.3, 0.4),
+        arrowprops=dict(arrowstyle="-", color="gray", lw=0.6),
+        only_move={"points": "xy", "text": "xy"},
+    )
 
     ax.axhline(0.677, color=COLORS["direct"], linestyle="--",
-               linewidth=1.2, alpha=0.5, zorder=2, label="_nolegend_")
-    ax.text(2100, 0.680, "Direct\nbaseline", ha="right", va="bottom",
-            fontsize=7.5, color=COLORS["direct"], alpha=0.8)
+               linewidth=1, alpha=0.4, zorder=2)
+    ax.text(2080, 0.680, "Direct baseline", ha="right",
+            fontsize=7.5, color=COLORS["direct"], alpha=0.7)
 
     ax.set_xlabel("Average Tokens per Example", fontsize=11)
     ax.set_ylabel("Accuracy", fontsize=11)
-    ax.set_title("Accuracy–Cost Tradeoff", fontsize=12)
-    ax.set_xlim(200, 2200)
-    ax.set_ylim(0.47, 0.77)
+    ax.set_title("Accuracy–Cost Tradeoff (All Methods)", fontsize=12)
+    ax.set_xlim(100, 2200)
+    ax.set_ylim(0.46, 0.79)
     ax.grid(True, alpha=0.3)
-
-    # Legend: two columns, outside plot area on right
-    ax.legend(
-        fontsize=7.5, ncol=2,
-        loc="upper left", bbox_to_anchor=(1.01, 1.0),
-        framealpha=0.9, borderpad=0.8,
-        handlelength=1.2, handleheight=1.2,
-    )
-
     fig.tight_layout()
-    fig.subplots_adjust(right=0.72)
     _save(fig, fig_dir / "fig1_accuracy_cost")
 
 
